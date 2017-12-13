@@ -26,7 +26,7 @@ def lpc_distance(a, b):
     if len(a) != len(b):
         return None
 
-    d = sum([abs(a[i] - b[i]) for i in range(len(a))])
+    d = sum([abs(a[i]/a[0] - b[i]/b[0]) for i in range(len(a))])
     return d
 
 
@@ -61,7 +61,7 @@ def init_parser():
     _parser = argparse.ArgumentParser()
     _parser.add_argument("--construct", help="construct and save LPC coefficients for all data", action="store_true")
     _parser.add_argument("--input_path", help="path for the input data", type=str, default='spoken_digit_dataset/')
-    _parser.add_argument("--output_path", help="path for the output data", type=str, default='output2/')
+    _parser.add_argument("--output_path", help="path for the output data", type=str, default='output/')
 
     _parser.add_argument("-n", help="number of LPC coefficients used", type=int, default=15)
     _parser.add_argument("-w", help="length of window in samples", type=int, default=240)
@@ -80,7 +80,7 @@ def init(_parser):
     if _args.construct:
         construct_all_lpc_coefficients(_input_path, _output_path, _coeffs_nb, _window_length)
 
-    return _coeffs_nb, _window_length, _sigma_2, _input_path, _output_path
+    return _coeffs_nb, _window_length, _input_path, _output_path
 
 
 def construct_all_lpc_coefficients(input, output, coeffs_nb, window_length):

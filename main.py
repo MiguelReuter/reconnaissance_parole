@@ -8,6 +8,7 @@ import scipy.io.wavfile as wav
 from scipy.linalg import toeplitz
 import matplotlib.pyplot as plt
 import numpy as np
+from math import sqrt
 
 
 def autocovariance(X, delta):
@@ -22,11 +23,10 @@ def autocovariance(X, delta):
 
 
 def lpc_distance(a, b):
-    # "foo" function
     if len(a) != len(b):
         return None
 
-    d = sum([abs(a[i]/a[0] - b[i]/b[0]) for i in range(len(a))])
+    d = sqrt(sum([pow(a[i]/a[0] - b[i]/b[0], 2) for i in range(len(a))]))
     return d
 
 
@@ -55,6 +55,15 @@ def process_mat_distance(mat_a, mat_b, wd, wv, wh):
                                   g_i_jm1 + wh * d_ij)
 
     return mat_d
+
+
+def process_distance(mat_a, mat_b, wd, wv, wh):
+    mat_d = process_mat_distance(mat_a, mat_b, wd, wv, wh)
+
+    return mat_d[-1,-1]
+
+
+
 
 
 def init_parser():
@@ -125,7 +134,6 @@ if __name__ == '__main__':
     [coeffs_nb, window_length,
      input_path, output_path] = init(parser)
 
-
     # example of lpc coefficients loading
     A_lpc = np.load(output_path + "9_jackson_9.npy")
     B_lpc = np.load(output_path + "9_jackson_45.npy")
@@ -134,7 +142,9 @@ if __name__ == '__main__':
     print(B_lpc.shape)
 
     D = process_mat_distance(A_lpc, B_lpc, wd=1.0, wv=1.0, wh=1.0)
+    val_D = process_distance(A_lpc, B_lpc, wd=1.0, wv=1.0, wh=1.0)
 
+    print(val_D)
     plt.imshow(D)
     plt.colorbar(orientation='vertical')
     plt.show()

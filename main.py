@@ -2,149 +2,115 @@
 
 
 import argparse
-import os.path
-
-import scipy.io.wavfile as wav
-from scipy.linalg import toeplitz
 import matplotlib.pyplot as plt
-import numpy as np
-from math import sqrt
 
-
-def autocovariance(X, delta):
-    N = len(X)
-    Xs = np.average(X)
-    auto_cov = 0
-    times = 0
-    for i in np.arange(0, N-delta):
-        auto_cov += (X[i-delta]-Xs)*(X[i]-Xs)
-        times += 1
-    return auto_cov/times
-
-
-def lpc_distance(a, b):
-    if len(a) != len(b):
-        return None
-
-    d = sqrt(sum([pow(a[i]/a[0] - b[i]/b[0], 2) for i in range(len(a))]))
-    return d
-
-
-def process_mat_distance(mat_a, mat_b, wd, wv, wh):
-    # elastic distance
-    if mat_a.shape[1] != mat_b.shape[1]:
-        return None
-
-    mat_d = np.zeros((mat_a.shape[0], mat_b.shape[0]))
-    # rajouter 0 au début de mat_a et mat_b ?
-    for j in range(mat_d.shape[1]):  # for each column
-        for i in range(mat_d.shape[0]):  # for each line
-            d_ij = lpc_distance(mat_a[i], mat_b[j])
-
-            g_im1_j = mat_d[i-1][j] if i > 0 else 0
-            g_im1_jm1 = mat_d[i-1][j-1] if (i > 0 and j > 0) else 0
-            g_i_jm1 = mat_d[i][j-1] if j > 0 else 0
-
-            if j == 0:
-                mat_d[i, j] = g_im1_j + wv * d_ij
-            elif i == 0:
-                mat_d[i, j] = g_i_jm1 + wh * d_ij
-            else:
-                mat_d[i, j] = min(g_im1_j + wv * d_ij,
-                                  g_im1_jm1 + wd * d_ij,
-                                  g_i_jm1 + wh * d_ij)
-
-    return mat_d
-
-
-def process_distance(mat_a, mat_b, wd, wv, wh):
-    mat_d = process_mat_distance(mat_a, mat_b, wd, wv, wh)
-
-    return mat_d[-1,-1]
-
-
-
+from classification import *
+from distance import *
 
 
 def init_parser():
+    """
+    Create parser with specific arguments.
+
+    :return: parser
+    """
     _parser = argparse.ArgumentParser()
     _parser.add_argument("--construct", help="construct and save LPC coefficients for all data", action="store_true")
-    _parser.add_argument("--input_path", help="path for the input data", type=str, default='spoken_digit_dataset/')
-    _parser.add_argument("--output_path", help="path for the output data", type=str, default='output/')
-
+    _parser.add_argument("--show_signals", help="show representation of signals specified by --file_1 and --file_2",
+                         action="store_true")
+    _parser.add_argument("--show_distance", help="show representation of distance matrix specified by "
+                                                 "--file_1 and --file_2", action="store_true")
+    _parser.add_argument("--classify", help="classify data", action="store_true")
+    _parser.add_argument("--input_path", help="path for the input data (used in --construct)", type=str,
+                         default='spoken_digit_dataset/')
+    _parser.add_argument("--output_path", help="path for the output data (used in --construct)", type=str,
+                         default='output/')
+    _parser.add_argument("--file_1", help="path for first file (for --show_signals and --show_distance)", type=str,
+                         default='spoken_digit_dataset/0_theo_0.wav')
+    _parser.add_argument("--file_2", help="path for second file (for --show_signals and --show_distance)", type=str,
+                         default='spoken_digit_dataset/0_theo_1.wav')
     _parser.add_argument("-n", help="number of LPC coefficients used", type=int, default=15)
     _parser.add_argument("-w", help="length of window in samples", type=int, default=240)
+    _parser.add_argument("--wh", help="value for w_h coefficient", type=float, default=1.0)
+    _parser.add_argument("--wd", help="value for w_d coefficient", type=float, default=1.0)
+    _parser.add_argument("--wv", help="value for w_v coefficient", type=float, default=1.0)
+    _parser.add_argument("-k", help="specify number of nearest neighbors used to classify", type=int, default=5)
+
     return _parser
 
 
-def init(_parser):
-    _args = _parser.parse_args()
+def show_signals(file_1, file_2):
+    """
+    Display the waveforms for file_1 and file_2 in a window.
 
-    _coeffs_nb = _args.n
-    _window_length = _args.w
-    _input_path = _args.input_path
-    _output_path = _args.output_path
+    :param file_1: [str] filename for the first audio file
+    :param file_2: [str] filename for the second audio file
+    :return: None
+    """
+    fe_1, s1 = wav.read(file_1)
+    fe_2, s2 = wav.read(file_2)
 
-    # construct and save all lpc coefficients
-    if _args.construct:
-        construct_all_lpc_coefficients(_input_path, _output_path, _coeffs_nb, _window_length)
+    # if signal is stereo --> to mono
+    if isinstance(s1[0], np.ndarray):
+        s1 = s1.sum(axis=1) / 2
 
-    return _coeffs_nb, _window_length, _input_path, _output_path
+    if isinstance(s2[0], np.ndarray):
+        s2 = s2.sum(axis=1) / 2
+
+    plt.plot([i/fe_1 for i in range(len(s1))], s1, label=file_1)
+    plt.plot([i/fe_2 for i in range(len(s2))], s2, label=file_2)
+    plt.title("Signals representation")
+    plt.xlabel("time [s]")
+    plt.ylabel("value")
+    plt.legend(bbox_to_anchor=(0., .92, 1., .102), loc=3,
+               ncol=2, mode="expand", borderaxespad=0.)
+    plt.show()
 
 
-def construct_all_lpc_coefficients(input, output, coeffs_nb, window_length):
-    files = os.listdir(input)
-    for file in files:
-        mat_a = process_lpc_coefficients(input + file, coeffs_nb, window_length)
-        np.save(output + file[:-4], mat_a)
+def show_distance(file_1, file_2, n, w, wd, wv, wh):
+    """
+    Display the distance matrice between audio file file_1 and file_2.
 
+    :param file_1: [str] filename for the first audio file
+    :param file_2: [str] filename for the second audio file
+    :param n: [int] number of LPC coefficients for each time window
+    :param w: [int] number of samples for each time window
+    :param wd: [float] value for wd coefficient
+    :param wv: [float] value for wv coefficient
+    :param wh: [float] value for wh coefficient
+    :return: None
+    """
+    lpc_1 = process_lpc_coefficients(file_1, n, w)
+    lpc_2 = process_lpc_coefficients(file_2, n, w)
+    d, _ = process_distance(lpc_1, lpc_2, wd=wd, wv=wv, wh=wh)
 
-def process_lpc_coefficients(file, coeffs_nb, window_length):
-    Fe, x = wav.read(file)
-
-    # if signal x is stereo --> to mono
-    if isinstance(x[0], np.ndarray):
-        x = x.sum(axis=1) / 2
-
-    sigma = np.zeros(coeffs_nb)
-    sigma[0] = 1
-
-    hamming_window = np.hamming(window_length)
-    mat_a = []
-
-    offset = 0
-    while offset + window_length <= len(x):
-        s = np.multiply(hamming_window, x[offset:offset + window_length])
-
-        # LPC processing
-        R_coeffs = [autocovariance(s, delta) for delta in range(coeffs_nb)]
-        R = toeplitz(R_coeffs)
-        a = np.dot(np.linalg.inv(R), sigma)
-        a = a / a[0]
-        mat_a.append(a)
-        offset += window_length // 2  # hamming window overlap (50%)
-    mat_a = np.array(mat_a)
-    return mat_a
+    plt.imshow(d)
+    plt.title("Distance matrix")
+    plt.xlabel(file_1)
+    plt.ylabel(file_2)
+    plt.colorbar(orientation='vertical')
+    plt.show()
 
 
 if __name__ == '__main__':
     parser = init_parser()
     args = parser.parse_args()
 
-    [coeffs_nb, window_length,
-     input_path, output_path] = init(parser)
+    if args.construct:
+        construct_all_lpc_coefficients(args.input_path, args.output_path, args.n, args.w)
 
-    # example of lpc coefficients loading
-    A_lpc = np.load(output_path + "9_jackson_9.npy")
-    B_lpc = np.load(output_path + "9_jackson_45.npy")
+    if args.show_distance:
+        show_distance(args.file_1, args.file_2, args.n, args.w, args.wd, args.wv, args.wh)
 
-    print(A_lpc.shape)
-    print(B_lpc.shape)
+    if args.show_signals:
+        show_signals(args.file_1, args.file_2)
 
-    D = process_mat_distance(A_lpc, B_lpc, wd=1.0, wv=1.0, wh=1.0)
-    val_D = process_distance(A_lpc, B_lpc, wd=1.0, wv=1.0, wh=1.0)
+    if args.classify:
+        results = classify(k=args.k, wd=args.wd, wv=args.wv, wh=args.wh)
+        classifier_precision = results.count(True) / len(results)
+        print("--------------------------------------------")
+        print("Classifier precision : ", classifier_precision)
 
-    print(val_D)
-    plt.imshow(D)
-    plt.colorbar(orientation='vertical')
-    plt.show()
+        with open("log.txt", "a") as log_file:
+            log_file.write("--------------------------------------------\n")
+            log_file.write("Classifier precision : " + str(classifier_precision) + "\n")
